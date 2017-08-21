@@ -6,36 +6,56 @@ import Html.Events exposing (..)
 import Svg
 import Svg.Attributes
 import Result
+import Array exposing (Array)
 
 
 -- Model
 
 type alias Model =
-    { pathData: List (Int, String)
+    { pathData: List (Int, Array (String))
     , strokeWidth: String
     , strokeColor: String
     , fillColor: String
+    , duration: String
+    , repeatCount: String
+    , begin: String
     , pointInsertIndex: Maybe Int
-    , focusedPointField: Maybe Int
+    , focusedPointField: Maybe (Int, Int)
+    , animationFrameAmount: Int
     }
 
 init : (Model, Cmd Msg)
 init =
-    (Model [] "1" "black" "none" Nothing Nothing, Cmd.none)
+    ( { pathData = []
+      , strokeWidth = "5"
+      , strokeColor = "black"
+      , fillColor = "none"
+      , duration = "1s"
+      , repeatCount = "indefinite"
+      , begin = "0s"
+      , pointInsertIndex = Nothing
+      , focusedPointField = Nothing
+      , animationFrameAmount = 1
+      }
+    , Cmd.none)
 
 
 -- Messages
 
 type Msg
-    = PointUpdated Int String
+    = PointUpdated Int Int String
     | AddPoint
     | RemovePoint Int
     | StrokeWidthUpdated String
     | StrokeColorUpdated String
     | FillColorUpdated String
+    | DurationUpdated String
+    | RepeatCountUpdated String
+    | BeginUpdated String
     | PointInsertIndexChange String
-    | AnimFieldFocused Int
+    | AnimFieldFocused Int Int
     | AnimFieldBlurred
+    | AddAnimationFrame
 
 
 -- Update
@@ -43,11 +63,11 @@ type Msg
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
-        PointUpdated targetIndex pointString ->
+        PointUpdated targetPoint targetKey pointString ->
             let
                 updateFunc (index, val) =
-                    if index == targetIndex then
-                        (index, pointString)
+                    if index == targetPoint then
+                        (index, Array.set targetKey pointString val)
                     else
                         (index, val)
                 pathData =
@@ -67,7 +87,7 @@ update msg model =
 
                 _ = Debug.log "With new ids" withNewIds
 
-                pathData = List.sortBy (\(index,_) -> index) <| ((targetIndex,"") :: withNewIds)
+                pathData = List.sortBy (\(index,_) -> index) <| ((targetIndex, Array.repeat model.animationFrameAmount "") :: withNewIds)
                 _ = Debug.log " " pathData
             in
                 ({model | pathData = pathData}, Cmd.none)
@@ -86,12 +106,31 @@ update msg model =
             ({model | strokeColor = value}, Cmd.none)
         FillColorUpdated value ->
             ({model | fillColor = value}, Cmd.none)
+        DurationUpdated value ->
+            ({model | duration = value}, Cmd.none)
+        RepeatCountUpdated value ->
+            ({model | repeatCount = value}, Cmd.none)
+        BeginUpdated value ->
+            ({model | begin = value}, Cmd.none)
         PointInsertIndexChange value ->
             ({model | pointInsertIndex = Result.toMaybe <| String.toInt value}, Cmd.none)
-        AnimFieldFocused id ->
-            ({model | focusedPointField = Just id}, Cmd.none)
+        AnimFieldFocused id keyId ->
+            ({model | focusedPointField = Just (id, keyId)}, Cmd.none)
         AnimFieldBlurred ->
             ({model | focusedPointField = Nothing}, Cmd.none)
+        AddAnimationFrame ->
+            let
+                animationFrameAmount = model.animationFrameAmount+1
+
+                pathUpdateFunction : (Int, Array String) -> (Int, Array String)
+                pathUpdateFunction (id, data) =
+                    ( id
+                    , Array.fromList ((Array.toList data) ++ [""])
+                    )
+
+                pathData = List.map pathUpdateFunction model.pathData
+            in
+                ({model | animationFrameAmount = animationFrameAmount, pathData = pathData}, Cmd.none)
 
 
 -- View
@@ -112,28 +151,48 @@ pathInputFields model =
     let
         pointRow (id, val) =
             let
-                textFieldAttributes =
-                    ( if model.focusedPointField == Just id then
+                textFieldAttributes keyIndex val =
+                    ( if model.focusedPointField == Just (id,keyIndex) then
                         []
                     else
                         [value val]
                     )
                     ++
-                        [ onInput (PointUpdated id)
-                        , onFocus (AnimFieldFocused id)
+                        [ onInput (PointUpdated id keyIndex)
+                        , onFocus (AnimFieldFocused id keyIndex)
                         , onBlur AnimFieldBlurred
                         ]
+
+                textFields =
+                    List.map (\(keyIndex, val) -> td [] [input (textFieldAttributes keyIndex val) []])
+                    <| List.indexedMap (,)
+                    <| Array.toList val
             in
-            tr []
-                [ td [] [text <| toString id]
-                , td [] [input textFieldAttributes []]
-                , td [] [button [onClick (RemovePoint id)] [text "x"]]
-                ]
+                tr []
+                    ( [ td [] [text <| toString id] ]
+                      ++
+                      textFields
+                      ++
+                      [ td [] [button [onClick (RemovePoint id)] [text "x"]]
+                      ]
+                    )
     in
         table []
             <| List.map
                 pointRow
                 model.pathData
+
+
+propertyInputFields : Html Msg
+propertyInputFields =
+    div [style [("display", "flex"), ("flex-wrap", "wrap")]]
+        [ inputField "stroke-width" StrokeWidthUpdated
+        , inputField "stroke-color" StrokeColorUpdated
+        , inputField "fill-color" FillColorUpdated
+        , inputField "repeatCount" RepeatCountUpdated
+        , inputField "duration" DurationUpdated
+        , inputField "begin" BeginUpdated
+        ]
 
 view : Model -> Html Msg
 view model =
@@ -142,27 +201,53 @@ view model =
             [ pathInputFields model
             , div []
                 [ button [onClick AddPoint] [text "Add point"]
-                , input [onInput PointInsertIndexChange, placeholder "target id"] []
+                , input [onInput PointInsertIndexChange, placeholder "insert before"] []
                 ]
-            , inputField "stroke-width" StrokeWidthUpdated
-            , inputField "stroke-color" StrokeColorUpdated
-            , inputField "fill-color" FillColorUpdated
+            , div []
+                [button [onClick AddAnimationFrame] [text "Add frame"]]
+            , propertyInputFields
             ]
         , drawSvg model
-        , p [] [text <| pointsToPathData model.pathData]
+        , p [] [text <| pathDataForFrame 0 model.pathData]
         ]
 
 
-pointsToPathData : List (Int, String) -> String
+pointsToPathData : List String -> String
 pointsToPathData points =
     List.foldr (++) ""
-        <| List.map (\(_, val) -> val ++ " ") points
+        <| points
+
+
+pathDataForFrame : Int -> List (Int, Array String) -> String
+pathDataForFrame frameIndex points =
+    pointsToPathData
+        <| List.map (Maybe.withDefault "default")
+        <| List.map (\(_, vals) -> Array.get frameIndex vals) points
+
+
+animationFrames : Model -> List (Svg.Svg Msg)
+animationFrames model =
+    if model.animationFrameAmount == 2 then
+        [ Svg.animate
+            [ Svg.Attributes.attributeName "d"
+            , Svg.Attributes.from <| pathDataForFrame 0 model.pathData
+            , Svg.Attributes.to <| pathDataForFrame 1 model.pathData
+            , Svg.Attributes.dur model.duration
+            , Svg.Attributes.begin model.begin
+            , Svg.Attributes.repeatCount model.repeatCount
+            ]
+            []
+        ]
+    else
+        []
 
 
 drawSvg : Model -> Html Msg
 drawSvg model =
     let
-        path = Svg.path [Svg.Attributes.d <| pointsToPathData model.pathData] []
+        path = Svg.path 
+            [ Svg.Attributes.d <| pathDataForFrame 0 model.pathData]
+            (animationFrames model)
     in
         Svg.svg
             [ Svg.Attributes.viewBox "0 0 100 100"
