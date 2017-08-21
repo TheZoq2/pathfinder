@@ -8,7 +8,11 @@ import Svg.Attributes
 import Result
 import Array exposing (Array)
 
-
+-- Properties of an animation keyframe
+type alias KeyframeProperty =
+    { time: String
+    , spline: String
+    }
 -- Model
 
 type alias Model =
@@ -22,6 +26,7 @@ type alias Model =
     , pointInsertIndex: Maybe Int
     , focusedPointField: Maybe (Int, Int)
     , animationFrameAmount: Int
+    , keyframeProperties: Array KeyframeProperty
     }
 
 init : (Model, Cmd Msg)
@@ -36,6 +41,7 @@ init =
       , pointInsertIndex = Nothing
       , focusedPointField = Nothing
       , animationFrameAmount = 1
+      , keyframeProperties = Array.fromList [{time = "", spline = ""}]
       }
     , Cmd.none)
 
@@ -56,6 +62,8 @@ type Msg
     | AnimFieldFocused Int Int
     | AnimFieldBlurred
     | AddAnimationFrame
+    | KeyframeTimeChanged Int String
+    | KeyframeSplineChanged Int String
 
 
 -- Update
@@ -131,6 +139,22 @@ update msg model =
                 pathData = List.map pathUpdateFunction model.pathData
             in
                 ({model | animationFrameAmount = animationFrameAmount, pathData = pathData}, Cmd.none)
+        KeyframeTimeChanged id val ->
+            let
+                oldValue = Maybe.withDefault (KeyframeProperty "" "") <| Array.get id model.keyframeProperties
+                newValue = {oldValue | time = time}
+
+                newProperties = Array.set id oldValue model.keyframeProperties
+            in
+                ({model | keyframeProperties = newProperties}, Cmd.none)
+        KeyframeSplineChanged id val ->
+            let
+                oldValue = Maybe.withDefault (KeyframeProperty "" "") <| Array.get id model.keyframeProperties
+                newValue = {oldValue | spline = val}
+
+                newProperties = Array.set id newValue model.keyframeProperties
+            in
+                ({model | keyframeProperties = newProperties}, Cmd.none)
 
 
 -- View
@@ -183,6 +207,20 @@ pathInputFields model =
                 model.pathData
 
 
+keyframeInputFields : Model -> Html Msg
+keyframeInputFields model =
+    let
+        row id =
+            tr []
+                [ td [] [input [onInput <| KeyframeTimeChanged id, placeholder "time"] []]
+                , td [] [input [onInput <| KeyframeSplineChanged id, placeholder "spline"] []]
+                ]
+    in
+        table []
+            <| (++) [tr [] [td [] [text "time"], td [] [text "spline"]]] 
+                <| List.map row
+                <| List.range 0 (model.animationFrameAmount-1)
+
 propertyInputFields : Html Msg
 propertyInputFields =
     div [style [("display", "flex"), ("flex-wrap", "wrap")]]
@@ -208,7 +246,17 @@ view model =
             , propertyInputFields
             ]
         , drawSvg model
-        , p [] [text <| pathDataForFrame 0 model.pathData]
+        , keyframeInputFields model
+        , debugOutput model
+        ]
+
+
+debugOutput : Model -> Html Msg
+debugOutput model =
+    div []
+        [ p [] [text <| pathDataForFrame 0 model.pathData]
+        , p [] [text <| getSplineString model]
+        , p [] [text <| getTimeString model]
         ]
 
 
@@ -225,9 +273,24 @@ pathDataForFrame frameIndex points =
         <| List.map (\(_, vals) -> Array.get frameIndex vals) points
 
 
+
+mergeKeyframeStrings : List String -> String
+mergeKeyframeStrings values =
+    List.foldl (++) "" <| List.intersperse ";" <| values
+
+getSplineString : Model -> String
+getSplineString model =
+    mergeKeyframeStrings <| List.map (\val -> val.spline) <|Array.toList model.keyframeProperties
+
+getTimeString : Model -> String
+getTimeString model =
+    mergeKeyframeStrings <| List.map (\val -> val.time) <|Array.toList model.keyframeProperties
+
+
+
 animationFrames : Model -> List (Svg.Svg Msg)
 animationFrames model =
-    if model.animationFrameAmount == 2 then
+    if model.animationFrameAmount > 1 then
         [ Svg.animate
             [ Svg.Attributes.attributeName "d"
             , Svg.Attributes.from <| pathDataForFrame 0 model.pathData
