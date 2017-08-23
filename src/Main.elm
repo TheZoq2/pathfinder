@@ -137,14 +137,22 @@ update msg model =
                     )
 
                 pathData = List.map pathUpdateFunction model.pathData
+
+                keyframeProperties = Array.push (KeyframeProperty "" "") model.keyframeProperties
             in
-                ({model | animationFrameAmount = animationFrameAmount, pathData = pathData}, Cmd.none)
+                ( { model
+                    | animationFrameAmount = animationFrameAmount
+                    , pathData = pathData
+                    , keyframeProperties = keyframeProperties
+                  }
+                , Cmd.none
+                )
         KeyframeTimeChanged id val ->
             let
                 oldValue = Maybe.withDefault (KeyframeProperty "" "") <| Array.get id model.keyframeProperties
-                newValue = {oldValue | time = time}
+                newValue = {oldValue | time = val}
 
-                newProperties = Array.set id oldValue model.keyframeProperties
+                newProperties = Array.set id newValue model.keyframeProperties
             in
                 ({model | keyframeProperties = newProperties}, Cmd.none)
         KeyframeSplineChanged id val ->
@@ -276,28 +284,38 @@ pathDataForFrame frameIndex points =
 
 mergeKeyframeStrings : List String -> String
 mergeKeyframeStrings values =
-    List.foldl (++) "" <| List.intersperse ";" <| values
+    List.foldr (++) "" <| List.intersperse ";" <| values
 
 getSplineString : Model -> String
 getSplineString model =
-    mergeKeyframeStrings <| List.map (\val -> val.spline) <|Array.toList model.keyframeProperties
+    mergeKeyframeStrings
+        <| List.map (\val -> val.spline)
+        <| Array.toList
+        <| Array.slice 1 model.animationFrameAmount model.keyframeProperties
 
 getTimeString : Model -> String
 getTimeString model =
     mergeKeyframeStrings <| List.map (\val -> val.time) <|Array.toList model.keyframeProperties
 
 
+animationValues : Model -> String
+animationValues model =
+    mergeKeyframeStrings
+        <| List.map (\id -> pathDataForFrame id model.pathData) 
+        <| List.range 0 (model.animationFrameAmount - 1)
 
 animationFrames : Model -> List (Svg.Svg Msg)
 animationFrames model =
     if model.animationFrameAmount > 1 then
         [ Svg.animate
             [ Svg.Attributes.attributeName "d"
-            , Svg.Attributes.from <| pathDataForFrame 0 model.pathData
-            , Svg.Attributes.to <| pathDataForFrame 1 model.pathData
+            , Svg.Attributes.values <| animationValues model
             , Svg.Attributes.dur model.duration
             , Svg.Attributes.begin model.begin
             , Svg.Attributes.repeatCount model.repeatCount
+            , Svg.Attributes.keyTimes <| getTimeString model
+            , Svg.Attributes.keySplines <| getSplineString model
+            , Svg.Attributes.calcMode "spline"
             ]
             []
         ]
