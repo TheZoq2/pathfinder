@@ -8,62 +8,8 @@ import Svg.Attributes
 import Result
 import Array exposing (Array)
 
--- Properties of an animation keyframe
-type alias KeyframeProperty =
-    { time: String
-    , spline: String
-    }
--- Model
-
-type alias Model =
-    { pathData: List (Int, Array (String))
-    , strokeWidth: String
-    , strokeColor: String
-    , fillColor: String
-    , duration: String
-    , repeatCount: String
-    , begin: String
-    , pointInsertIndex: Maybe Int
-    , focusedPointField: Maybe (Int, Int)
-    , animationFrameAmount: Int
-    , keyframeProperties: Array KeyframeProperty
-    }
-
-init : (Model, Cmd Msg)
-init =
-    ( { pathData = []
-      , strokeWidth = "5"
-      , strokeColor = "black"
-      , fillColor = "none"
-      , duration = "1s"
-      , repeatCount = "indefinite"
-      , begin = "0s"
-      , pointInsertIndex = Nothing
-      , focusedPointField = Nothing
-      , animationFrameAmount = 1
-      , keyframeProperties = Array.fromList [{time = "", spline = ""}]
-      }
-    , Cmd.none)
-
-
--- Messages
-
-type Msg
-    = PointUpdated Int Int String
-    | AddPoint
-    | RemovePoint Int
-    | StrokeWidthUpdated String
-    | StrokeColorUpdated String
-    | FillColorUpdated String
-    | DurationUpdated String
-    | RepeatCountUpdated String
-    | BeginUpdated String
-    | PointInsertIndexChange String
-    | AnimFieldFocused Int Int
-    | AnimFieldBlurred
-    | AddAnimationFrame
-    | KeyframeTimeChanged Int String
-    | KeyframeSplineChanged Int String
+import Msg exposing (Msg(..))
+import Model exposing (..)
 
 
 -- Update
